@@ -104,7 +104,7 @@ Payroll smart contracts supporting automated salary distribution, milestone-base
 ```bash
 # Clone repository
 git clone https://github.com/SafeVault/vestroll-contract.git
-cd vestroll-contracts/solidity-contract
+cd vestroll-contracts/vestroll-solodity
 
 # Install dependencies
 npm install
@@ -126,7 +126,7 @@ npx hardhat run scripts/deploy.ts --network sepolia
 
 ```bash
 # Navigate to stellar directory
-cd vestroll-contracts/soroban-contract
+cd vestroll-contracts/vestroll-soroban
 
 # Install Soroban CLI
 cargo install --locked soroban-cli --features opt
