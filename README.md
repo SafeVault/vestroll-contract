@@ -1,16 +1,9 @@
 # VestRoll Payroll System - Smart Contracts
 
-Payroll smart contracts supporting automated salary distribution, milestone-based payments and multi-signature escrow on Ethereum and Stellar networks using stablecoins (USDT, USDC, BUSD).
+Payroll smart contracts supporting automated salary distribution, milestone-based payments and multi-signature escrow on Ethereum and Stellar networks using stablecoins.
 
 ## Technology Stack
 
-### Ethereum Ecosystem
-- **Language**: Solidity ^0.8.20
-- **Framework**: Hardhat 2.19+
-- **Testing**: Hardhat + Chai + Waffle
-- **Libraries**: OpenZeppelin Contracts 5.0+
-- **Networks**: Ethereum Mainnet, Goerli, Sepolia, Polygon, BSC
-- **Tools**: ethers.js v6, Hardhat-deploy, Slither
 
 ### Stellar Ecosystem
 - **Language**: Rust (Soroban)
