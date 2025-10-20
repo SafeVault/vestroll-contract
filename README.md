@@ -1,6 +1,6 @@
 # VestRoll Payroll System - Smart Contracts
 
-Payroll smart contracts supporting automated salary distribution, milestone-based payments and multi-signature escrow on Ethereum and Stellar networks using stablecoins.
+Payroll smart contracts supporting automated salary distribution, milestone-based payments and multi-signature escrow on Stellar networks using stablecoins.
 
 ## Technology Stack
 
