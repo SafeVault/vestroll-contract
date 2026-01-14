@@ -79,13 +79,3 @@ Manages the decentralized identity of participants.
    cargo test
    ```
 
-## Deployment
-
-To deploy a contract to the Stellar Testnet:
-
-```bash
-stellar contract deploy \
-  --wasm target/wasm32-unknown-unknown/release/vestroll_vault.wasm \
-  --source-account <YOUR_ACCOUNT> \
-  --network testnet
-```
