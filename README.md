@@ -1,137 +1,91 @@
 # VestRoll Payroll System - Smart Contracts
 
-Payroll smart contracts supporting automated salary distribution, milestone-based payments and multi-signature escrow on Stellar networks using stablecoins.
+Payroll smart contracts supporting automated salary distribution, milestone-based payments and financial escrow on the Stellar network using Soroban.
 
 ## Technology Stack
 
-
 ### Stellar Ecosystem
+
 - **Language**: Rust (Soroban)
-- **Framework**: Soroban SDK 20.0+
-- **Testing**: Soroban CLI + Rust test framework
+- **Framework**: Soroban SDK 22.0.0
+- **Testing**: Rust test framework (`cargo test`)
 - **Networks**: Stellar Mainnet, Testnet, Futurenet
-- **Tools**: stellar-sdk, soroban-cli
+- **Tools**: Stellar CLI
 
 ## Project Structure
 
+```text
+vestroll-contract/
+└── vestroll-soroban/
+    ├── contracts/
+    │   ├── common/          # Shared types, enums, and utility structures
+    │   ├── vault/           # Stablecoin escrow and payout logic
+    │   ├── lifecycle/       # Contract management (Fixed, Milestone, PAYG)
+    │   └── profile/         # Organization and Worker identity/roles
+    └── Cargo.toml           # Workspace configuration
 ```
-├── ethereum/                           # Ethereum smart contracts
-│   ├── contracts/
-│   │   ├── core/
-│   │   │   ├── PayrollManager.sol     # Main payroll contract
-│   │   │   ├── EmployeeRegistry.sol   # Employee management
-│   │   │   ├── PaymentProcessor.sol   # Payment execution
-│   │   │   └── VestingSchedule.sol    # Token vesting
-│   │   ├── governance/
-│   │   │   ├── MultiSigWallet.sol     # Multi-signature wallet
-│   │   │   ├── Timelock.sol           # Timelock controller
-│   │   │   └── GovernanceToken.sol    # Governance token
-│   │   ├── payment/
-│   │   │   ├── RecurringPayment.sol   # Automated recurring payments
-│   │   │   ├── MilestonePayment.sol   # Milestone-based payments
-│   │   │   ├── EscrowPayment.sol      # Escrow functionality
-│   │   │   └── BatchPayment.sol       # Batch payment processor
-│   │   ├── stablecoin/
-│   │   │   ├── StablecoinManager.sol  # Stablecoin interface
-│   │   │   └── PriceOracle.sol        # Price feed integration
-│   │   ├── utils/
-│   │   │   ├── ReentrancyGuard.sol    # Security utilities
-│   │   │   └── Pausable.sol           # Emergency pause
-│   │   └── interfaces/
-│   │       ├── IPayrollManager.sol
-│   │       ├── IERC20Extended.sol
-│   │       └── IPriceOracle.sol
-│   ├── test/
-│   │   ├── PayrollManager.test.ts
-│   │   ├── MilestonePayment.test.ts
-│   │   └── MultiSigWallet.test.ts
-│   ├── scripts/
-│   │   ├── deploy.ts
-│   │   ├── upgrade.ts
-│   │   └── verify.ts
-│   ├── hardhat.config.ts
-│   └── package.json
-│
-├── stellar/                            # Stellar smart contracts (Soroban)
-│   ├── contracts/
-│   │   ├── payroll/
-│   │   │   ├── src/
-│   │   │   │   ├── lib.rs             # Main payroll contract
-│   │   │   │   ├── storage.rs         # Storage definitions
-│   │   │   │   ├── types.rs           # Custom types
-│   │   │   │   └── test.rs            # Contract tests
-│   │   │   └── Cargo.toml
-│   │   ├── milestone/
-│   │   │   ├── src/
-│   │   │   │   ├── lib.rs             # Milestone payment contract
-│   │   │   │   └── test.rs
-│   │   │   └── Cargo.toml
-│   │   ├── escrow/
-│   │   │   ├── src/
-│   │   │   │   ├── lib.rs             # Escrow contract
-│   │   │   │   └── test.rs
-│   │   │   └── Cargo.toml
-│   │   └── multisig/
-│   │       ├── src/
-│   │       │   ├── lib.rs             # Multi-sig wallet
-│   │       │   └── test.rs
-│   │       └── Cargo.toml
-│   ├── scripts/
-│   │   ├── deploy.sh
-│   │   └── initialize.sh
-│   └── Cargo.toml
-│
-├── docs/
-│   ├── architecture.md
-│   ├── security.md
-│   └── integration-guide.md
-├── audits/                             # Security audit reports
-└── README.md
-```
-)
 
-## Installation
+## Contracts Overview
 
-### Ethereum Setup
+### 1. Common (`vestroll-common`)
+
+A library crate containing shared data structures used across all contracts. It defines `ContractType`, `ContractStatus`, and `ContractMetadata`.
+
+### 2. Vault (`vestroll-vault`)
+
+Handles the financial core of the system.
+
+- **Escrow**: Securely holds stablecoins (USDC/USDT).
+- **Payouts**: Executes transfers to employees/contractors based on authorized triggers.
+
+### 3. Lifecycle (`vestroll-lifecycle`)
+
+Manages the business logic of payroll agreements.
+
+- Supports **Fixed Rate**, **Milestone**, and **Pay-as-you-go** flows.
+- Tracks contract state and transitions.
+
+### 4. Profile (`vestroll-profile`)
+
+Manages the decentralized identity of participants.
+
+- **Organizations**: Handles employer entities and their administrative roles.
+- **Workers**: Manages employee/contractor profiles and linked wallet addresses.
+
+## Getting Started
+
+### Prerequisites
+
+- [Rust](https://www.rust-lang.org/tools/install)
+- [Stellar CLI](https://developers.stellar.org/docs/build/smart-contracts/getting-started/setup#install-the-stellar-cli)
+
+### Setup
+
+1. **Clone the repository**:
+
+   ```bash
+   git clone https://github.com/SafeVault/vestroll-contract.git
+   cd vestroll-contract/vestroll-soroban
+   ```
+
+2. **Build the contracts**:
+
+   ```bash
+   stellar contract build
+   ```
+
+3. **Run tests**:
+   ```bash
+   cargo test
+   ```
+
+## Deployment
+
+To deploy a contract to the Stellar Testnet:
 
 ```bash
-# Clone repository
-git clone https://github.com/SafeVault/vestroll-contract.git
-cd vestroll-contracts/vestroll-solodity
-
-# Install dependencies
-npm install
-
-# Copy environment variables
-cp .env.example .env
-
-# Compile contracts
-npx hardhat compile
-
-# Run tests
-npx hardhat test
-
-# Deploy to testnet
-npx hardhat run scripts/deploy.ts --network sepolia
-```
-
-### Stellar Setup
-
-```bash
-# Navigate to stellar directory
-cd vestroll-contracts/vestroll-soroban
-
-# Install Soroban CLI
-cargo install --locked soroban-cli --features opt
-
-# Install dependencies
-cargo build
-
-# Run tests
-cargo test
-
-# Build contracts
-soroban contract build
-
-
+stellar contract deploy \
+  --wasm target/wasm32-unknown-unknown/release/vestroll_vault.wasm \
+  --source-account <YOUR_ACCOUNT> \
+  --network testnet
 ```
