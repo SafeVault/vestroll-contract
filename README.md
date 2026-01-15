@@ -1,6 +1,7 @@
 # VestRoll Payroll System - Smart Contracts
 
 Payroll smart contracts supporting automated salary distribution, milestone-based payments and financial escrow on the Stellar network using Soroban.
+VestRoll is a Payroll management platform built for modern businesses. it provides a smooth experience for managing contracts, team members, and financial operations. By leveraging the Stellar configuration, VestRoll ensures fast, low-cost, and secure stablecoin interactions, making global payroll efficient and accessible.
 
 ## Technology Stack
 
@@ -51,6 +52,21 @@ Manages the decentralized identity of participants.
 
 - **Organizations**: Handles employer entities and their administrative roles.
 - **Workers**: Manages employee/contractor profiles and linked wallet addresses.
+
+## 🎯 Target Audience & Ecosystem Impact
+
+### Who is this for?
+
+- **Global Enterprises**: Companies with distributed teams needing seamless cross-border payroll.
+- **DAO & Web3 Organizations**: Native crypto organizations requiring fiat and stablecoin payroll solutions.
+- **Freelancers & Contractors**: Individuals seeking transparent, instant, and low-fee payments.
+
+### Contribution to the Stellar Ecosystem
+
+VestRoll plays a pivotal role in the **Stellar ecosystem** by:
+
+1.  **Driving Real-World Utility**: Moving beyond speculation to practical, high-volume stablecoin use cases (Payroll).
+2.  **Highlighting Efficiency**: Showcasing Stellar's speed and low fees for frequent, small-to-large value transactions.
 
 ## Getting Started
 
