@@ -9,3 +9,6 @@ crate-type = ["cdylib"]
 [dependencies]
 soroban-sdk = { workspace = true }
 vestroll-common = { path = "../common" }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["alloc", "testutils"] }
