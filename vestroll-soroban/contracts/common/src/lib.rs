@@ -35,6 +35,8 @@ pub enum DataKey {
     Initialized,
     Admin,
     Paused,
+    ProtocolAsset,
+    AssetWhitelist(Address),
 }
 
 // Error
@@ -45,6 +47,12 @@ pub enum VaultError {
     AdminNotSet = 1,
     NotAuthorized = 2,
     ContractPaused = 3,
+    AssetNotWhitelisted = 4,
+    InvalidAmount = 5,
+    SelfTransfer = 6,
+    TransferFailed = 7,
+    AssetAlreadyWhitelisted = 8,
+    AssetNotProtocol = 9,
 }
 
 // Events
