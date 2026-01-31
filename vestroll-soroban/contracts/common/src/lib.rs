@@ -30,6 +30,15 @@ pub struct ContractMetadata {
 }
 
 #[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TreasuryStats {
+    pub total_deposits: i128,
+    pub total_locked: i128,
+    pub total_fees: i128,
+    pub total_liquidity: i128,
+}
+
+#[contracttype]
 #[derive(Clone)]
 pub enum DataKey {
     Initialized,
@@ -37,6 +46,9 @@ pub enum DataKey {
     Paused,
     ProtocolAsset,
     AssetWhitelist(Address),
+    TotalDeposits(Address),
+    TotalLocked(Address),
+    TotalFees(Address),
 }
 
 // Error
@@ -53,6 +65,8 @@ pub enum VaultError {
     TransferFailed = 7,
     AssetAlreadyWhitelisted = 8,
     AssetNotProtocol = 9,
+    InsufficientBalance = 10,
+    InsufficientLockedFunds = 11,
 }
 
 // Events

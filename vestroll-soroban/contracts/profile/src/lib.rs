@@ -6,11 +6,11 @@ pub struct ProfileContract;
 
 #[contractimpl]
 impl ProfileContract {
-    pub fn create_profile(env: Env, user: Address, name: String, is_org: bool) {
+    pub fn create_profile(_env: Env, _user: Address, _name: String, _is_org: bool) {
         // Implementation for profile creation
     }
 
-    pub fn get_profile_name(env: Env, user: Address) -> String {
+    pub fn get_profile_name(_env: Env, _user: Address) -> String {
         panic!("Not implemented");
     }
 }
