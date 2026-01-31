@@ -24,9 +24,6 @@ impl VaultContract {
             return Err(VaultError::ContractPaused);
         };
 
-        // Transfer funds to vault
-        token::Client::new(&env, &asset).transfer(&from, &env.current_contract_address(), &amount);
-
         // Update stats
         let key_deposits = DataKey::TotalDeposits(asset.clone());
         let mut deposits: i128 = env.storage().persistent().get(&key_deposits).unwrap_or(0);
@@ -38,8 +35,6 @@ impl VaultContract {
         locked += amount;
         env.storage().persistent().set(&key_locked, &locked);
 
-        Ok(())
-        
         Self::internal_transfer_from(&env, &asset, &from, amount)
     }
 
@@ -61,11 +56,11 @@ impl VaultContract {
 
         // Cannot withdraw more than locked (reserved) using this function
         if amount > locked {
-            // Panic or error
-            panic!("Cannot withdraw more than locked amount using release function");
+            return Err(VaultError::InsufficientLockedFunds);
         }
 
-        token::Client::new(&env, &asset).transfer(&env.current_contract_address(), &to, &amount);
+        // Safe transfer
+        Self::internal_transfer(&env, &asset, &to, amount)?;
 
         locked -= amount;
         env.storage().persistent().set(&key_locked, &locked);
@@ -113,8 +108,6 @@ impl VaultContract {
             panic!("Insufficient unallocated funds");
         }
 
-        client.transfer(&env.current_contract_address(), &to, &amount);
-
         Self::internal_transfer(&env, &asset, &to, amount)
     }
 
@@ -130,6 +123,16 @@ impl VaultContract {
         Self::check_admin(&env, &admin)?;
         Self::internal_whitelist_asset(&env, asset, allowed);
         Ok(())
+    }
+
+    pub fn blacklist_asset(env: Env, admin: Address, asset: Address) -> Result<(), VaultError> {
+        Self::check_admin(&env, &admin)?;
+        Self::internal_whitelist_asset(&env, asset, false);
+        Ok(())
+    }
+
+    pub fn is_asset_whitelisted(env: Env, asset: Address) -> bool {
+        Self::is_whitelisted(&env, &asset)
     }
 
     pub fn get_treasury_stats(env: Env, asset: Address) -> TreasuryStats {
@@ -221,8 +224,11 @@ impl VaultContract {
         }
     }
     
-    // Internal safe wrappers
-     fn internal_transfer(env: &Env, token: &Address, to: &Address, amount: i128) -> Result<(), VaultError> {
+    // ============================================================================
+    //                          Asset Gatekeeper (Safe Wrappers)
+    // ============================================================================
+
+    fn internal_transfer(env: &Env, token: &Address, to: &Address, amount: i128) -> Result<(), VaultError> {
         if amount <= 0 {
             return Err(VaultError::InvalidAmount);
         }
@@ -234,6 +240,13 @@ impl VaultContract {
         }
 
         let client = token::Client::new(env, token);
+        
+        // Balance pre-check
+        let balance = client.balance(&env.current_contract_address());
+        if amount > balance {
+            return Err(VaultError::InsufficientBalance);
+        }
+
         client.transfer(&env.current_contract_address(), to, &amount);
         Ok(())
     }
