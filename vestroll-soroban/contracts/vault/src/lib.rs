@@ -1,7 +1,9 @@
 #![no_std]
 mod test_vault;
-use soroban_sdk::{contract, contractimpl, token, Address, Env};
-use vestroll_common::{DataKey, TreasuryStats, VaultError, PAUSED, UNPAUSED};
+use soroban_sdk::{contract, contractimpl, token, Address, Env, Vec};
+use vestroll_common::{
+    DataKey, PayoutEntry, TreasuryStats, VaultError, BATCH_DONE, PAUSED, PAYOUT, UNPAUSED,
+};
 
 #[contract]
 pub struct VaultContract;
@@ -24,7 +26,6 @@ impl VaultContract {
             return Err(VaultError::ContractPaused);
         };
 
-        // Update stats
         let key_deposits = DataKey::TotalDeposits(asset.clone());
         let mut deposits: i128 = env.storage().persistent().get(&key_deposits).unwrap_or(0);
         deposits += amount;
@@ -39,7 +40,6 @@ impl VaultContract {
     }
 
     pub fn withdraw(env: Env, to: Address, amount: i128, asset: Address) -> Result<(), VaultError> {
-        // Implementation for payouts
         let admin: Address = env
             .storage()
             .instance()
@@ -54,12 +54,10 @@ impl VaultContract {
         let key_locked = DataKey::TotalLocked(asset.clone());
         let mut locked: i128 = env.storage().persistent().get(&key_locked).unwrap_or(0);
 
-        // Cannot withdraw more than locked (reserved) using this function
         if amount > locked {
             return Err(VaultError::InsufficientLockedFunds);
         }
 
-        // Safe transfer
         Self::internal_transfer(&env, &asset, &to, amount)?;
 
         locked -= amount;
@@ -74,6 +72,80 @@ impl VaultContract {
         env.storage().persistent().set(&key_deposits, &deposits);
 
         Ok(())
+    }
+
+    pub fn execute_payouts(
+        env: Env,
+        vault: Address,
+        list: Vec<PayoutEntry>,
+    ) -> Result<u32, VaultError> {
+        // 1. Auth check
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(VaultError::AdminNotSet)?;
+        admin.require_auth();
+
+        // 2. Vault address must match this contract
+        if vault != env.current_contract_address() {
+            return Err(VaultError::NotAuthorized);
+        }
+
+        // 3. Block if paused
+        if Self::fail_if_paused(&env) {
+            return Err(VaultError::ContractPaused);
+        }
+
+        // 4. Reject empty list
+        if list.is_empty() {
+            return Err(VaultError::BatchEmptyList);
+        }
+
+        // 5. Process each payment — if any fail, whole tx reverts automatically
+        let mut processed: u32 = 0;
+
+        for entry in list.iter() {
+            let PayoutEntry {
+                recipient,
+                amount,
+                asset,
+            } = entry;
+
+            let key_locked = DataKey::TotalLocked(asset.clone());
+            let mut locked: i128 = env.storage().persistent().get(&key_locked).unwrap_or(0);
+
+            if amount > locked {
+                return Err(VaultError::InsufficientLockedFunds);
+            }
+
+            // Transfer tokens (reuses all existing safety checks)
+            Self::internal_transfer(&env, &asset, &recipient, amount)?;
+
+            // Update locked
+            locked -= amount;
+            env.storage().persistent().set(&key_locked, &locked);
+
+            // Update deposits
+            let key_deposits = DataKey::TotalDeposits(asset.clone());
+            let mut deposits: i128 = env.storage().persistent().get(&key_deposits).unwrap_or(0);
+            deposits -= amount;
+            if deposits < 0 {
+                deposits = 0;
+            }
+            env.storage().persistent().set(&key_deposits, &deposits);
+
+            // Emit one event per payment
+            env.events()
+                .publish((PAYOUT, recipient.clone()), (asset.clone(), amount));
+
+            processed += 1;
+        }
+
+        // Emit batch summary event
+        env.events().publish((BATCH_DONE, admin), processed);
+
+        Ok(processed)
     }
 
     pub fn withdraw_available(
@@ -101,7 +173,6 @@ impl VaultContract {
             .get(&DataKey::TotalLocked(asset.clone()))
             .unwrap_or(0);
 
-        // Available liquidity = Balance - Locked
         let available = balance - locked;
 
         if amount > available {
