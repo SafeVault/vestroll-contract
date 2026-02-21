@@ -76,9 +76,34 @@ pub enum VaultError {
     AssetNotProtocol = 9,
     InsufficientBalance = 10,
     InsufficientLockedFunds = 11,
-    BatchEmptyList = 12,
-    BatchPayoutFailed = 13,
+    MissingTrustline = 12,
+    BatchEmptyList = 13,
+    BatchPayoutFailed = 14,
 }
+
+#[contracterror]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[repr(u32)]
+pub enum LifecycleError {
+    AlreadyInitialized = 1,
+    NotInitialized = 2,
+    ContractNotFound = 3,
+    NotAuthorized = 4,
+    ContractNotActive = 5,
+    InvalidContractType = 6,
+    InvalidMilestoneData = 7,
+    MilestoneNotFound = 8,
+    MilestoneAlreadyCompleted = 9,
+    MilestoneNotCompleted = 10,
+    InsufficientContractFunds = 11,
+    ProfileContractNotSet = 12,
+    VaultContractNotSet = 13,
+    EmployeeCannotReceivePayment = 14,
+    EmployeeProfileNotFound = 15,
+    VaultPaymentFailed = 16,
+}
+
+
 
 // Events
 pub const PAUSED: Symbol = symbol_short!("paused");

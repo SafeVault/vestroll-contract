@@ -1,5 +1,6 @@
 #![no_std]
 mod test_vault;
+
 use soroban_sdk::{contract, contractimpl, token, Address, Env, Vec};
 use vestroll_common::{
     DataKey, PayoutEntry, TreasuryStats, VaultError, BATCH_DONE, PAUSED, PAYOUT, UNPAUSED,
@@ -10,20 +11,39 @@ pub struct VaultContract;
 
 #[contractimpl]
 impl VaultContract {
-    /// Initializes the vault with an admin and the USDC token address.
+    // ====================================================================
+    // Initialization
+    // ====================================================================
+
     pub fn initialize(env: Env, admin: Address, token: Address) -> Result<(), VaultError> {
         if env.storage().instance().has(&DataKey::Admin) {
-            return Err(VaultError::NotAuthorized); // Already initialized
+            return Err(VaultError::NotAuthorized); 
         }
+        
+        admin.require_auth();
         env.storage().instance().set(&DataKey::Admin, &admin);
         env.storage().instance().set(&DataKey::Token, &token);
+        env.storage().instance().set(&DataKey::Paused, &false);
+        
+        // Auto-whitelist the primary token
+        Self::internal_whitelist_asset(&env, token, true);
+        
         Ok(())
     }
 
-    /// Deposits USDC into the vault.
-    pub fn deposit(env: Env, from: Address, amount: i128) -> Result<(), VaultError> {
+    // ====================================================================
+    // Deposit
+    // ====================================================================
+
+    pub fn deposit(
+        env: Env,
+        from: Address,
+        amount: i128,
+        asset: Address,
+    ) -> Result<(), VaultError> {
         from.require_auth();
-        if Self::fail_if_paused(&env) {
+        
+        if Self::is_paused(&env) {
             return Err(VaultError::ContractPaused);
         };
 
@@ -31,174 +51,114 @@ impl VaultContract {
             return Err(VaultError::InvalidAmount);
         }
 
-        let token_addr: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Token)
-            .ok_or(VaultError::AdminNotSet)?;
-        let client = token::Client::new(&env, &token_addr);
-
-        client.transfer(&from, &env.current_contract_address(), &amount);
+        // Use the internal helper to handle whitelist and transfer logic
+        Self::internal_transfer_from(&env, &asset, &from, amount)?;
 
         // Update stats
-        let key_deposits = DataKey::TotalDeposits(token_addr.clone());
+        let key_deposits = DataKey::TotalDeposits(asset.clone());
         let mut deposits: i128 = env.storage().persistent().get(&key_deposits).unwrap_or(0);
         deposits += amount;
         env.storage().persistent().set(&key_deposits, &deposits);
 
-        Ok(())
-    }
-
-    /// Withdraws USDC from the vault to a specified address. Only admin can call this.
-    pub fn withdraw(env: Env, to: Address, amount: i128) -> Result<(), VaultError> {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Admin)
-            .ok_or(VaultError::AdminNotSet)?;
-        admin.require_auth();
-
-        if Self::fail_if_paused(&env) {
-            return Err(VaultError::ContractPaused);
-        };
-
-        if amount <= 0 {
-            return Err(VaultError::InvalidAmount);
-        }
-
-        let token_addr: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Token)
-            .ok_or(VaultError::AdminNotSet)?;
-        let client = token::Client::new(&env, &token_addr);
-
-        let balance = client.balance(&env.current_contract_address());
-        if amount > balance {
-            return Err(VaultError::InsufficientBalance);
-        }
-
-        client.transfer(&env.current_contract_address(), &to, &amount);
-
-        // Update stats
-        let key_deposits = DataKey::TotalDeposits(token_addr.clone());
-        let mut deposits: i128 = env.storage().persistent().get(&key_deposits).unwrap_or(0);
-        deposits -= amount;
-        if deposits < 0 {
-            deposits = 0;
-        }
-        env.storage().persistent().set(&key_deposits, &deposits);
+        let key_locked = DataKey::TotalLocked(asset.clone());
+        let mut locked: i128 = env.storage().persistent().get(&key_locked).unwrap_or(0);
+        locked += amount;
+        env.storage().persistent().set(&key_locked, &locked);
 
         Ok(())
     }
 
-    /// Transfers USDC to another contract address. Only admin can call this.
-    pub fn transfer_to_contract(env: Env, to: Address, amount: i128) -> Result<(), VaultError> {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Admin)
-            .ok_or(VaultError::AdminNotSet)?;
-        admin.require_auth();
+    // ====================================================================
+    // Batch Payouts
+    // ====================================================================
 
-        if Self::fail_if_paused(&env) {
-            return Err(VaultError::ContractPaused);
-        };
-
-        if amount <= 0 {
-            return Err(VaultError::InvalidAmount);
-        }
-
-        let token_addr: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Token)
-            .ok_or(VaultError::AdminNotSet)?;
-        let client = token::Client::new(&env, &token_addr);
-
-        let balance = client.balance(&env.current_contract_address());
-        if amount > balance {
-            return Err(VaultError::InsufficientBalance);
-        }
-
-        client.transfer(&env.current_contract_address(), &to, &amount);
-
-        Ok(())
-    }
-
-    /// Executes a batch of payouts. Only admin can call this.
     pub fn execute_payouts(
         env: Env,
         vault: Address,
         list: Vec<PayoutEntry>,
     ) -> Result<u32, VaultError> {
-        // 1. Auth check
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Admin)
-            .ok_or(VaultError::AdminNotSet)?;
+        let admin = Self::get_admin_internal(&env)?;
         admin.require_auth();
 
-        // 2. Vault address must match this contract
         if vault != env.current_contract_address() {
             return Err(VaultError::NotAuthorized);
         }
 
-        // 3. Block if paused
-        if Self::fail_if_paused(&env) {
+        if Self::is_paused(&env) {
             return Err(VaultError::ContractPaused);
         }
 
-        // 4. Reject empty list
         if list.is_empty() {
             return Err(VaultError::BatchEmptyList);
         }
 
-        // 5. Process each payment
         let mut processed: u32 = 0;
-
         for entry in list.iter() {
-            let PayoutEntry {
-                recipient,
-                amount,
-                asset,
-            } = entry;
+            let PayoutEntry { recipient, amount, asset } = entry;
 
-            if amount <= 0 {
-                return Err(VaultError::InvalidAmount);
+            let key_locked = DataKey::TotalLocked(asset.clone());
+            let mut locked: i128 = env.storage().persistent().get(&key_locked).unwrap_or(0);
+
+            if amount > locked {
+                return Err(VaultError::InsufficientLockedFunds);
             }
 
-            let client = token::Client::new(&env, &asset);
-            let balance = client.balance(&env.current_contract_address());
+            Self::internal_transfer(&env, &asset, &recipient, amount)?;
 
-            if amount > balance {
-                return Err(VaultError::InsufficientBalance);
-            }
+            // Update Storage
+            locked -= amount;
+            env.storage().persistent().set(&key_locked, &locked);
 
-            client.transfer(&env.current_contract_address(), &recipient, &amount);
-
-            // Update deposits if it's the main token OR any asset
-            // Actually, main used DataKey::TotalDeposits(asset.clone())
             let key_deposits = DataKey::TotalDeposits(asset.clone());
             let mut deposits: i128 = env.storage().persistent().get(&key_deposits).unwrap_or(0);
-            deposits -= amount;
-            if deposits < 0 {
-                deposits = 0;
-            }
+            deposits = deposits.saturating_sub(amount);
             env.storage().persistent().set(&key_deposits, &deposits);
 
-            // Emit one event per payment
-            env.events()
-                .publish((PAYOUT, recipient.clone()), (asset.clone(), amount));
-
+            env.events().publish((PAYOUT, recipient.clone()), (asset.clone(), amount));
             processed += 1;
         }
 
-        // Emit batch summary event
         env.events().publish((BATCH_DONE, admin), processed);
-
         Ok(processed)
+    }
+
+    // ====================================================================
+    // Withdraw Operations
+    // ====================================================================
+
+    pub fn withdraw(env: Env, to: Address, amount: i128, asset: Address) -> Result<(), VaultError> {
+        let admin = Self::get_admin_internal(&env)?;
+        admin.require_auth();
+
+        if Self::is_paused(&env) {
+            return Err(VaultError::ContractPaused);
+        };
+
+        if amount <= 0 {
+            return Err(VaultError::InvalidAmount);
+        }
+
+        Self::ensure_trustline_exists(&env, &to, &asset)?;
+
+        let key_locked = DataKey::TotalLocked(asset.clone());
+        let mut locked: i128 = env.storage().persistent().get(&key_locked).unwrap_or(0);
+
+        if amount > locked {
+            return Err(VaultError::InsufficientLockedFunds);
+        }
+
+        Self::internal_transfer(&env, &asset, &to, amount)?;
+
+        // Update stats
+        locked -= amount;
+        env.storage().persistent().set(&key_locked, &locked);
+
+        let key_deposits = DataKey::TotalDeposits(asset.clone());
+        let mut deposits: i128 = env.storage().persistent().get(&key_deposits).unwrap_or(0);
+        deposits = deposits.saturating_sub(amount);
+        env.storage().persistent().set(&key_deposits, &deposits);
+
+        Ok(())
     }
 
     pub fn withdraw_available(
@@ -207,14 +167,10 @@ impl VaultContract {
         amount: i128,
         asset: Address,
     ) -> Result<(), VaultError> {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Admin)
-            .ok_or(VaultError::AdminNotSet)?;
+        let admin = Self::get_admin_internal(&env)?;
         admin.require_auth();
 
-        if Self::fail_if_paused(&env) {
+        if Self::is_paused(&env) {
             return Err(VaultError::ContractPaused);
         };
 
@@ -224,91 +180,56 @@ impl VaultContract {
 
         let client = token::Client::new(&env, &asset);
         let balance = client.balance(&env.current_contract_address());
-        let locked: i128 = env
-            .storage()
-            .persistent()
-            .get(&DataKey::TotalLocked(asset.clone()))
-            .unwrap_or(0);
+        let locked: i128 = env.storage().persistent().get(&DataKey::TotalLocked(asset.clone())).unwrap_or(0);
 
         let available = balance - locked;
 
         if amount > available {
-            // Main used panic, but better return error
             return Err(VaultError::InsufficientBalance);
         }
 
-        client.transfer(&env.current_contract_address(), &to, &amount);
-
-        Ok(())
+        Self::internal_transfer(&env, &asset, &to, amount)
     }
+
+    // ====================================================================
+    // Asset & Admin Management
+    // ====================================================================
 
     pub fn set_pause(env: Env, admin: Address, paused: bool) -> Result<bool, VaultError> {
         admin.require_auth();
-        let pause_admin: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Admin)
-            .ok_or(VaultError::AdminNotSet)?;
+        let stored_admin = Self::get_admin_internal(&env)?;
 
-        if pause_admin != admin {
+        if stored_admin != admin {
             return Err(VaultError::NotAuthorized);
         }
 
         env.storage().instance().set(&DataKey::Paused, &paused);
 
         env.events().publish(
-            if paused {
-                (PAUSED, admin)
-            } else {
-                (UNPAUSED, admin)
-            },
+            if paused { (PAUSED, admin) } else { (UNPAUSED, admin) },
             env.ledger().timestamp(),
         );
         Ok(true)
     }
 
-    fn fail_if_paused(env: &Env) -> bool {
-        env.storage()
-            .instance()
-            .get(&DataKey::Paused)
-            .unwrap_or(false)
+    pub fn whitelist_asset(env: Env, admin: Address, asset: Address, allowed: bool) -> Result<(), VaultError> {
+        Self::check_admin(&env, &admin)?;
+        Self::internal_whitelist_asset(&env, asset, allowed);
+        Ok(())
     }
 
     pub fn get_admin(env: Env) -> Result<Address, VaultError> {
-        env.storage()
-            .instance()
-            .get(&DataKey::Admin)
-            .ok_or(VaultError::AdminNotSet)
-    }
-
-    pub fn get_token(env: Env) -> Result<Address, VaultError> {
-        env.storage()
-            .instance()
-            .get(&DataKey::Token)
-            .ok_or(VaultError::AdminNotSet)
+        Self::get_admin_internal(&env)
     }
 
     pub fn get_treasury_stats(env: Env, asset: Address) -> TreasuryStats {
-        let deposits: i128 = env
-            .storage()
-            .persistent()
-            .get(&DataKey::TotalDeposits(asset.clone()))
-            .unwrap_or(0);
-        let locked: i128 = env
-            .storage()
-            .persistent()
-            .get(&DataKey::TotalLocked(asset.clone()))
-            .unwrap_or(0);
-        let fees: i128 = env
-            .storage()
-            .persistent()
-            .get(&DataKey::TotalFees(asset.clone()))
-            .unwrap_or(0);
+        let deposits: i128 = env.storage().persistent().get(&DataKey::TotalDeposits(asset.clone())).unwrap_or(0);
+        let locked: i128 = env.storage().persistent().get(&DataKey::TotalLocked(asset.clone())).unwrap_or(0);
+        let fees: i128 = env.storage().persistent().get(&DataKey::TotalFees(asset.clone())).unwrap_or(0);
 
         let client = token::Client::new(&env, &asset);
         let balance = client.balance(&env.current_contract_address());
-
-        let liquidity = balance - locked;
+        let liquidity = balance.saturating_sub(locked);
 
         TreasuryStats {
             total_deposits: deposits,
@@ -316,5 +237,62 @@ impl VaultContract {
             total_fees: fees,
             total_liquidity: liquidity,
         }
+    }
+
+    // ====================================================================
+    // Internal Helpers
+    // ====================================================================
+
+    pub fn is_paused(env: &Env) -> bool {
+        env.storage().instance().get(&DataKey::Paused).unwrap_or(false)
+    }
+
+    fn get_admin_internal(env: &Env) -> Result<Address, VaultError> {
+        env.storage().instance().get(&DataKey::Admin).ok_or(VaultError::AdminNotSet)
+    }
+
+    fn check_admin(env: &Env, admin: &Address) -> Result<(), VaultError> {
+        admin.require_auth();
+        let stored_admin = Self::get_admin_internal(env)?;
+        if admin != &stored_admin {
+            return Err(VaultError::NotAuthorized);
+        }
+        Ok(())
+    }
+
+    fn is_whitelisted(env: &Env, asset: &Address) -> bool {
+        env.storage().persistent().has(&DataKey::AssetWhitelist(asset.clone()))
+    }
+
+    fn internal_whitelist_asset(env: &Env, asset: Address, allowed: bool) {
+        if allowed {
+            env.storage().persistent().set(&DataKey::AssetWhitelist(asset), &true);
+        } else {
+            env.storage().persistent().remove(&DataKey::AssetWhitelist(asset));
+        }
+    }
+
+    fn ensure_trustline_exists(env: &Env, recipient: &Address, asset: &Address) -> Result<(), VaultError> {
+        let token_client = token::Client::new(env, asset);
+        match token_client.try_balance(recipient) {
+            Ok(_) => Ok(()),
+            Err(_) => Err(VaultError::TransferFailed), 
+        }
+    }
+
+    fn internal_transfer(env: &Env, token: &Address, to: &Address, amount: i128) -> Result<(), VaultError> {
+        if !Self::is_whitelisted(env, token) { return Err(VaultError::AssetNotWhitelisted); }
+        
+        let client = token::Client::new(env, token);
+        client.transfer(&env.current_contract_address(), to, &amount);
+        Ok(())
+    }
+
+    fn internal_transfer_from(env: &Env, token: &Address, from: &Address, amount: i128) -> Result<(), VaultError> {
+        if !Self::is_whitelisted(env, token) { return Err(VaultError::AssetNotWhitelisted); }
+        
+        let client = token::Client::new(env, token);
+        client.transfer(from, &env.current_contract_address(), &amount);
+        Ok(())
     }
 }
