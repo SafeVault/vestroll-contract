@@ -49,6 +49,7 @@ pub enum DataKey {
     TotalDeposits(Address),
     TotalLocked(Address),
     TotalFees(Address),
+    Token,
 }
 
 // Error
