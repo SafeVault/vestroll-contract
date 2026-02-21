@@ -1,7 +1,9 @@
 #![no_std]
 mod test_vault;
 use soroban_sdk::{contract, contractimpl, token, Address, Env, Vec};
-use vestroll_common::{DataKey, PayoutEntry, TreasuryStats, VaultError, BATCH_DONE, PAUSED, PAYOUT, UNPAUSED};
+use vestroll_common::{
+    DataKey, PayoutEntry, TreasuryStats, VaultError, BATCH_DONE, PAUSED, PAYOUT, UNPAUSED,
+};
 
 #[contract]
 pub struct VaultContract;
@@ -104,14 +106,14 @@ impl VaultContract {
         let mut processed: u32 = 0;
 
         for entry in list.iter() {
-            let PayoutEntry { recipient, amount, asset } = entry;
+            let PayoutEntry {
+                recipient,
+                amount,
+                asset,
+            } = entry;
 
             let key_locked = DataKey::TotalLocked(asset.clone());
-            let mut locked: i128 = env
-                .storage()
-                .persistent()
-                .get(&key_locked)
-                .unwrap_or(0);
+            let mut locked: i128 = env.storage().persistent().get(&key_locked).unwrap_or(0);
 
             if amount > locked {
                 return Err(VaultError::InsufficientLockedFunds);
@@ -126,29 +128,22 @@ impl VaultContract {
 
             // Update deposits
             let key_deposits = DataKey::TotalDeposits(asset.clone());
-            let mut deposits: i128 = env
-                .storage()
-                .persistent()
-                .get(&key_deposits)
-                .unwrap_or(0);
+            let mut deposits: i128 = env.storage().persistent().get(&key_deposits).unwrap_or(0);
             deposits -= amount;
-            if deposits < 0 { deposits = 0; }
+            if deposits < 0 {
+                deposits = 0;
+            }
             env.storage().persistent().set(&key_deposits, &deposits);
 
             // Emit one event per payment
-            env.events().publish(
-                (PAYOUT, recipient.clone()),
-                (asset.clone(), amount),
-            );
+            env.events()
+                .publish((PAYOUT, recipient.clone()), (asset.clone(), amount));
 
             processed += 1;
         }
 
         // Emit batch summary event
-        env.events().publish(
-            (BATCH_DONE, admin),
-            processed,
-        );
+        env.events().publish((BATCH_DONE, admin), processed);
 
         Ok(processed)
     }
@@ -189,12 +184,20 @@ impl VaultContract {
 
     pub fn set_protocol_asset(env: Env, admin: Address, asset: Address) -> Result<(), VaultError> {
         Self::check_admin(&env, &admin)?;
-        env.storage().instance().set(&DataKey::ProtocolAsset, &asset);
+        env.storage()
+            .instance()
+            .set(&DataKey::ProtocolAsset, &asset);
+        // Auto-whitelist protocol asset
         Self::internal_whitelist_asset(&env, asset, true);
         Ok(())
     }
 
-    pub fn whitelist_asset(env: Env, admin: Address, asset: Address, allowed: bool) -> Result<(), VaultError> {
+    pub fn whitelist_asset(
+        env: Env,
+        admin: Address,
+        asset: Address,
+        allowed: bool,
+    ) -> Result<(), VaultError> {
         Self::check_admin(&env, &admin)?;
         Self::internal_whitelist_asset(&env, asset, allowed);
         Ok(())
@@ -246,7 +249,7 @@ impl VaultContract {
             .storage()
             .instance()
             .get(&DataKey::Admin)
-            .ok_or_else(|| return VaultError::AdminNotSet)?;
+            .ok_or(VaultError::AdminNotSet)?;
 
         if pause_admin != admin {
             return Err(VaultError::NotAuthorized);
@@ -259,14 +262,21 @@ impl VaultContract {
         env.storage().instance().set(&DataKey::Paused, &paused);
 
         env.events().publish(
-            if paused { (PAUSED, admin) } else { (UNPAUSED, admin) },
+            if paused {
+                (PAUSED, admin)
+            } else {
+                (UNPAUSED, admin)
+            },
             env.ledger().timestamp(),
         );
         Ok(true)
     }
 
     fn fail_if_paused(env: &Env) -> bool {
-        env.storage().instance().get(&DataKey::Paused).unwrap_or(false)
+        env.storage()
+            .instance()
+            .get(&DataKey::Paused)
+            .unwrap_or(false)
     }
 
     fn check_admin(env: &Env, admin: &Address) -> Result<(), VaultError> {
@@ -283,18 +293,33 @@ impl VaultContract {
     }
 
     fn is_whitelisted(env: &Env, asset: &Address) -> bool {
-        env.storage().persistent().has(&DataKey::AssetWhitelist(asset.clone()))
+        env.storage()
+            .persistent()
+            .has(&DataKey::AssetWhitelist(asset.clone()))
     }
 
     fn internal_whitelist_asset(env: &Env, asset: Address, allowed: bool) {
         if allowed {
-            env.storage().persistent().set(&DataKey::AssetWhitelist(asset), &true);
+            env.storage()
+                .persistent()
+                .set(&DataKey::AssetWhitelist(asset), &true);
         } else {
-            env.storage().persistent().remove(&DataKey::AssetWhitelist(asset));
+            env.storage()
+                .persistent()
+                .remove(&DataKey::AssetWhitelist(asset));
         }
     }
 
-    fn internal_transfer(env: &Env, token: &Address, to: &Address, amount: i128) -> Result<(), VaultError> {
+    // ============================================================================
+    //                          Asset Gatekeeper (Safe Wrappers)
+    // ============================================================================
+
+    fn internal_transfer(
+        env: &Env,
+        token: &Address,
+        to: &Address,
+        amount: i128,
+    ) -> Result<(), VaultError> {
         if amount <= 0 {
             return Err(VaultError::InvalidAmount);
         }
@@ -306,6 +331,8 @@ impl VaultContract {
         }
 
         let client = token::Client::new(env, token);
+
+        // Balance pre-check
         let balance = client.balance(&env.current_contract_address());
         if amount > balance {
             return Err(VaultError::InsufficientBalance);
@@ -315,7 +342,12 @@ impl VaultContract {
         Ok(())
     }
 
-    fn internal_transfer_from(env: &Env, token: &Address, from: &Address, amount: i128) -> Result<(), VaultError> {
+    fn internal_transfer_from(
+        env: &Env,
+        token: &Address,
+        from: &Address,
+        amount: i128,
+    ) -> Result<(), VaultError> {
         if amount <= 0 {
             return Err(VaultError::InvalidAmount);
         }
@@ -327,7 +359,12 @@ impl VaultContract {
         }
 
         let client = token::Client::new(env, token);
-        client.transfer_from(&env.current_contract_address(), from, &env.current_contract_address(), &amount);
+        client.transfer_from(
+            &env.current_contract_address(),
+            from,
+            &env.current_contract_address(),
+            &amount,
+        );
         Ok(())
     }
 }
