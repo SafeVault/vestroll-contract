@@ -39,6 +39,14 @@ pub struct TreasuryStats {
 }
 
 #[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PayoutEntry {
+    pub recipient: Address,
+    pub amount: i128,
+    pub asset: Address,
+}
+
+#[contracttype]
 #[derive(Clone)]
 pub enum DataKey {
     Initialized,
@@ -68,8 +76,12 @@ pub enum VaultError {
     AssetNotProtocol = 9,
     InsufficientBalance = 10,
     InsufficientLockedFunds = 11,
+    BatchEmptyList = 12,
+    BatchPayoutFailed = 13,
 }
 
 // Events
 pub const PAUSED: Symbol = symbol_short!("paused");
 pub const UNPAUSED: Symbol = symbol_short!("unpaused");
+pub const PAYOUT: Symbol = symbol_short!("payout");
+pub const BATCH_DONE: Symbol = symbol_short!("batch");

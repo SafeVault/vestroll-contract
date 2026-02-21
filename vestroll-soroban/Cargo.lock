@@ -1506,6 +1506,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "vestroll-escrow"
+version = "0.1.0"
+dependencies = [
+ "soroban-sdk",
+ "vestroll-common",
+]
+
+[[package]]
 name = "vestroll-identity"
 version = "0.0.0"
 dependencies = [
