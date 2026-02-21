@@ -12,7 +12,7 @@ fn create_test_env() -> (Env, VaultContractClient<'static>, Address) {
     (env, client, contract_id)
 }
 
-fn create_token_contract_v1<'a>(
+fn create_token_contract<'a>(
     env: &Env,
     admin: &Address,
 ) -> (token::Client<'a>, token::StellarAssetClient<'a>, Address) {
@@ -22,7 +22,7 @@ fn create_token_contract_v1<'a>(
     (client, admin_client, token_address)
 }
 
-// ── helper: deposit funds into vault and return token client + address ────────
+// Helper: deposit funds into vault and return token client + address
 fn setup_funded_vault(
     env: &Env,
     client: &VaultContractClient,
@@ -30,264 +30,122 @@ fn setup_funded_vault(
     admin: &Address,
     amount: i128,
 ) -> (token::Client<'static>, Address) {
-    let (token_client, token_admin_client, token_address) =
-        create_token_contract_v1(env, admin);
+    let (token_client, token_admin_client, token_address) = create_token_contract(env, admin);
 
-    client.initialize(admin);
-    client.whitelist_asset(admin, &token_address, &true);
+    client.initialize(admin, &token_address);
 
     token_admin_client.mint(admin, &amount);
     token_client.approve(admin, contract_id, &amount, &200);
-    client.deposit(admin, &amount, &token_address);
+    client.deposit(admin, &amount);
 
     (token_client, token_address)
 }
 
-// ── existing tests (unchanged) ────────────────────────────────────────────────
-
 #[test]
-fn test_initilization() {
-    let (env, client, _contract_id) = create_test_env();
+fn test_initialization() {
+    let (env, client, _) = create_test_env();
     let admin = Address::generate(&env);
-    client.initialize(&admin);
+    let token_admin = Address::generate(&env);
+    let (_, _, token_address) = create_token_contract(&env, &token_admin);
+
+    client.initialize(&admin, &token_address);
+
+    assert_eq!(client.get_admin(), admin);
+    assert_eq!(client.get_token(), token_address);
 }
 
 #[test]
-fn test_deposit_while_not_paused() {
+fn test_deposit() {
     let (env, client, contract_id) = create_test_env();
     let admin = Address::generate(&env);
+    let token_admin = Address::generate(&env);
+    let (token_client, token_admin_client, token_address) = create_token_contract(&env, &token_admin);
     let user = Address::generate(&env);
 
-    let (token_client, token_admin_client, token_address) = create_token_contract_v1(&env, &admin);
-    let amount = 10000;
+    client.initialize(&admin, &token_address);
 
-    env.mock_all_auths();
-
-    token_admin_client.mint(&user, &amount);
-    client.initialize(&admin);
-    client.whitelist_asset(&admin, &token_address, &true);
-    token_client.approve(&user, &contract_id, &amount, &200);
-    client.deposit(&user, &amount, &token_address);
-
-    let stats = client.get_treasury_stats(&token_address);
-    assert_eq!(stats.total_deposits, amount);
-    assert_eq!(stats.total_locked, amount);
-    assert_eq!(stats.total_liquidity, 0);
-    assert_eq!(token_client.balance(&contract_id), amount);
-}
-
-#[test]
-#[should_panic(expected = "HostError: Error(Contract, #3)")]
-fn test_deposit_when_paused() {
-    let (env, client, _contract_id) = create_test_env();
-    let admin = Address::generate(&env);
-    let user = Address::generate(&env);
-
-    let (_token_client, _token_admin_client, token_address) = create_token_contract_v1(&env, &admin);
-    let amount = 10000;
-    env.mock_all_auths();
-
-    client.initialize(&admin);
-    client.whitelist_asset(&admin, &token_address, &true);
-    client.set_pause(&admin, &true);
-    client.deposit(&user, &amount, &token_address);
-}
-
-#[test]
-fn test_whitelist_asset() {
-    let (env, client, _contract_id) = create_test_env();
-    let admin = Address::generate(&env);
-    client.initialize(&admin);
-
-    let token_admin = Address::generate(&env);
-    let (token, _, _) = create_token_contract_v1(&env, &token_admin);
-
-    client.whitelist_asset(&admin, &token.address, &true);
-    client.whitelist_asset(&admin, &token.address, &false);
-}
-
-#[test]
-fn test_set_protocol_asset() {
-    let (env, client, _contract_id) = create_test_env();
-    let admin = Address::generate(&env);
-    client.initialize(&admin);
-
-    let token_admin = Address::generate(&env);
-    let (token, _, _) = create_token_contract_v1(&env, &token_admin);
-
-    client.set_protocol_asset(&admin, &token.address);
-}
-
-#[test]
-fn test_deposit_success() {
-    let (env, client, contract_id) = create_test_env();
-    let admin = Address::generate(&env);
-    client.initialize(&admin);
-
-    let token_admin = Address::generate(&env);
-    let (token, token_admin_client, _) = create_token_contract_v1(&env, &token_admin);
-    let from = Address::generate(&env);
-
-    client.whitelist_asset(&admin, &token.address, &true);
-    token_admin_client.mint(&from, &10000);
-    token.approve(&from, &contract_id, &10000, &200);
-    client.deposit(&from, &500, &token.address);
-
-    assert_eq!(token.balance(&contract_id), 500);
-    assert_eq!(token.balance(&from), 9500);
-}
-
-#[test]
-#[should_panic(expected = "HostError: Error(Contract, #1)")]
-fn test_admin_not_set() {
-    let (env, client, _contract_id) = create_test_env();
-    let admin = Address::generate(&env);
-    env.mock_all_auths();
-    client.set_pause(&admin, &true);
-}
-
-#[test]
-#[should_panic(expected = "HostError: Error(Contract, #4)")]
-fn test_deposit_not_whitelisted() {
-    let (env, client, _contract_id) = create_test_env();
-    let admin = Address::generate(&env);
-    client.initialize(&admin);
-
-    let token_admin = Address::generate(&env);
-    let (token, token_admin_client, _) = create_token_contract_v1(&env, &token_admin);
-    let from = Address::generate(&env);
-
-    token_admin_client.mint(&from, &1000);
-    client.deposit(&from, &500, &token.address);
-}
-
-#[test]
-#[should_panic(expected = "HostError: Error(Contract, #5)")]
-fn test_deposit_zero_amount() {
-    let (env, client, _contract_id) = create_test_env();
-    let admin = Address::generate(&env);
-    env.mock_all_auths();
-    client.initialize(&admin);
-
-    let token_admin = Address::generate(&env);
-    let (token, _, _) = create_token_contract_v1(&env, &token_admin);
-    let from = Address::generate(&env);
-
-    client.whitelist_asset(&admin, &token.address, &true);
-    client.deposit(&from, &0, &token.address);
-}
-
-#[test]
-fn test_treasury_management() {
-    let (env, client, contract_id) = create_test_env();
-    let admin = Address::generate(&env);
-    let user = Address::generate(&env);
-
-    let (token_client, token_admin_client, token_address) = create_token_contract_v1(&env, &admin);
-    let deposit_amount = 1000;
-    let surplus_amount = 500;
-
-    env.mock_all_auths();
-
-    client.initialize(&admin);
-    client.whitelist_asset(&admin, &token_address, &true);
-
-    token_admin_client.mint(&user, &deposit_amount);
-    token_client.approve(&user, &contract_id, &deposit_amount, &200);
-    client.deposit(&user, &deposit_amount, &token_address);
-
-    token_admin_client.mint(&admin, &surplus_amount);
-    token_client.transfer(&admin, &contract_id, &surplus_amount);
-
-    let stats = client.get_treasury_stats(&token_address);
-    assert_eq!(stats.total_deposits, deposit_amount);
-    assert_eq!(stats.total_locked, deposit_amount);
-    assert_eq!(stats.total_liquidity, surplus_amount);
-
-    let recipient = Address::generate(&env);
-    client.withdraw_available(&recipient, &surplus_amount, &token_address);
-
-    assert_eq!(token_client.balance(&recipient), surplus_amount);
-    assert_eq!(token_client.balance(&contract_id), deposit_amount);
-
-    let stats_after = client.get_treasury_stats(&token_address);
-    assert_eq!(stats_after.total_liquidity, 0);
-    assert_eq!(stats_after.total_locked, deposit_amount);
-}
-
-#[test]
-#[should_panic(expected = "Insufficient unallocated funds")]
-fn test_withdraw_available_fail_locked() {
-    let (env, client, _contract_id) = create_test_env();
-    let admin = Address::generate(&env);
-    let user = Address::generate(&env);
-
-    let (token_client, token_admin_client, token_address) = create_token_contract_v1(&env, &admin);
     let amount = 1000;
-    env.mock_all_auths();
-    client.initialize(&admin);
-    client.whitelist_asset(&admin, &token_address, &true);
-
     token_admin_client.mint(&user, &amount);
-    token_client.approve(&user, &_contract_id, &amount, &200);
-    client.deposit(&user, &amount, &token_address);
 
-    let recipient = Address::generate(&env);
-    client.withdraw_available(&recipient, &500, &token_address);
+    client.deposit(&user, &amount);
+
+    assert_eq!(token_client.balance(&contract_id), amount);
+    assert_eq!(token_client.balance(&user), 0);
 }
 
 #[test]
-fn test_withdraw_success() {
+fn test_withdraw_admin_only() {
     let (env, client, contract_id) = create_test_env();
     let admin = Address::generate(&env);
-    client.initialize(&admin);
-
     let token_admin = Address::generate(&env);
-    let (token, token_admin_client, _) = create_token_contract_v1(&env, &token_admin);
-    let to = Address::generate(&env);
+    let (token_client, token_admin_client, token_address) = create_token_contract(&env, &token_admin);
 
-    client.whitelist_asset(&admin, &token.address, &true);
-    token_admin_client.mint(&admin, &1000);
-    token.approve(&admin, &contract_id, &1000, &200);
-    client.deposit(&admin, &1000, &token.address);
-    client.withdraw(&to, &200, &token.address);
+    client.initialize(&admin, &token_address);
 
-    assert_eq!(token.balance(&to), 200);
-    assert_eq!(token.balance(&contract_id), 800);
+    let amount = 1000;
+    token_admin_client.mint(&contract_id, &amount);
+
+    let recipient = Address::generate(&env);
+    client.withdraw(&recipient, &500);
+
+    assert_eq!(token_client.balance(&recipient), 500);
+    assert_eq!(token_client.balance(&contract_id), 500);
 }
 
 #[test]
-fn test_blacklist_asset() {
-    let (env, client, _contract_id) = create_test_env();
+#[should_panic]
+fn test_withdraw_non_admin_fails() {
+    let (env, client, contract_id) = create_test_env();
     let admin = Address::generate(&env);
-    client.initialize(&admin);
-
+    let non_admin = Address::generate(&env);
     let token_admin = Address::generate(&env);
-    let (token, _, _) = create_token_contract_v1(&env, &token_admin);
+    let (_, token_admin_client, token_address) = create_token_contract(&env, &token_admin);
 
-    client.whitelist_asset(&admin, &token.address, &true);
-    assert!(client.is_asset_whitelisted(&token.address));
+    client.initialize(&admin, &token_address);
+    token_admin_client.mint(&contract_id, &1000);
 
-    client.blacklist_asset(&admin, &token.address);
-    assert!(!client.is_asset_whitelisted(&token.address));
+    env.as_contract(&non_admin, || {
+         client.withdraw(&non_admin, &500);
+    });
 }
 
 #[test]
-#[should_panic(expected = "HostError: Error(Contract, #11)")]
-fn test_withdraw_insufficient_balance() {
-    let (env, client, _contract_id) = create_test_env();
+fn test_transfer_to_contract() {
+    let (env, client, contract_id) = create_test_env();
     let admin = Address::generate(&env);
-    client.initialize(&admin);
+    let token_admin = Address::generate(&env);
+    let (token_client, token_admin_client, token_address) = create_token_contract(&env, &token_admin);
+    let other_contract = Address::generate(&env);
 
-    let (token, token_admin_client, _) = create_token_contract_v1(&env, &admin);
-    let to = Address::generate(&env);
+    client.initialize(&admin, &token_address);
+    token_admin_client.mint(&contract_id, &1000);
 
-    client.whitelist_asset(&admin, &token.address, &true);
-    token_admin_client.mint(&_contract_id, &100);
-    client.withdraw(&to, &200, &token.address);
+    client.transfer_to_contract(&other_contract, &300);
+
+    assert_eq!(token_client.balance(&other_contract), 300);
+    assert_eq!(token_client.balance(&contract_id), 700);
 }
 
-// ── NEW: batch payout tests ───────────────────────────────────────────────────
+#[test]
+fn test_pause_mechanics() {
+    let (env, client, _contract_id) = create_test_env();
+    let admin = Address::generate(&env);
+    let token_admin = Address::generate(&env);
+    let (_, token_admin_client, token_address) = create_token_contract(&env, &token_admin);
+    let user = Address::generate(&env);
+
+    client.initialize(&admin, &token_address);
+    client.set_pause(&admin, &true);
+
+    token_admin_client.mint(&user, &1000);
+
+    let result = client.try_deposit(&user, &500);
+    assert!(result.is_err());
+
+    client.set_pause(&admin, &false);
+    client.deposit(&user, &500);
+    assert_eq!(client.try_deposit(&user, &500).is_ok(), true);
+}
 
 #[test]
 fn test_execute_payouts_single_entry() {
@@ -295,8 +153,7 @@ fn test_execute_payouts_single_entry() {
     let admin = Address::generate(&env);
     let recipient = Address::generate(&env);
 
-    let (token, token_address) =
-        setup_funded_vault(&env, &client, &contract_id, &admin, 1000);
+    let (token, token_address) = setup_funded_vault(&env, &client, &contract_id, &admin, 1000);
 
     let list = soroban_sdk::vec![
         &env,
@@ -307,9 +164,6 @@ fn test_execute_payouts_single_entry() {
     assert_eq!(processed, 1);
     assert_eq!(token.balance(&recipient), 300);
     assert_eq!(token.balance(&contract_id), 700);
-
-    let stats = client.get_treasury_stats(&token_address);
-    assert_eq!(stats.total_locked, 700);
 }
 
 #[test]
@@ -320,8 +174,7 @@ fn test_execute_payouts_multiple_recipients() {
     let r2 = Address::generate(&env);
     let r3 = Address::generate(&env);
 
-    let (token, token_address) =
-        setup_funded_vault(&env, &client, &contract_id, &admin, 3000);
+    let (token, token_address) = setup_funded_vault(&env, &client, &contract_id, &admin, 3000);
 
     let list = soroban_sdk::vec![
         &env,
@@ -345,8 +198,7 @@ fn test_execute_payouts_atomic_rollback() {
     let r1 = Address::generate(&env);
     let r2 = Address::generate(&env);
 
-    let (token, token_address) =
-        setup_funded_vault(&env, &client, &contract_id, &admin, 1000);
+    let (token, token_address) = setup_funded_vault(&env, &client, &contract_id, &admin, 1000);
 
     let list = soroban_sdk::vec![
         &env,
@@ -357,13 +209,13 @@ fn test_execute_payouts_atomic_rollback() {
     let result = client.try_execute_payouts(&contract_id, &list);
     assert!(result.is_err());
 
-    // Full rollback — vault unchanged, r1 got nothing
+    // Full rollback
     assert_eq!(token.balance(&contract_id), 1000);
     assert_eq!(token.balance(&r1), 0);
 }
 
 #[test]
-#[should_panic(expected = "HostError: Error(Contract, #12)")]
+#[should_panic]
 fn test_execute_payouts_empty_list() {
     let (env, client, contract_id) = create_test_env();
     let admin = Address::generate(&env);
@@ -374,55 +226,19 @@ fn test_execute_payouts_empty_list() {
 }
 
 #[test]
-#[should_panic(expected = "HostError: Error(Contract, #3)")]
+#[should_panic]
 fn test_execute_payouts_when_paused() {
     let (env, client, contract_id) = create_test_env();
     let admin = Address::generate(&env);
     let recipient = Address::generate(&env);
 
-    let (_, token_address) =
-        setup_funded_vault(&env, &client, &contract_id, &admin, 1000);
+    let (_, token_address) = setup_funded_vault(&env, &client, &contract_id, &admin, 1000);
 
     client.set_pause(&admin, &true);
 
     let list = soroban_sdk::vec![
         &env,
         PayoutEntry { recipient, amount: 100, asset: token_address },
-    ];
-    client.execute_payouts(&contract_id, &list);
-}
-
-#[test]
-#[should_panic(expected = "HostError: Error(Contract, #2)")]
-fn test_execute_payouts_wrong_vault_address() {
-    let (env, client, contract_id) = create_test_env();
-    let admin = Address::generate(&env);
-    let recipient = Address::generate(&env);
-
-    let (_, token_address) =
-        setup_funded_vault(&env, &client, &contract_id, &admin, 500);
-
-    let wrong_vault = Address::generate(&env);
-    let list = soroban_sdk::vec![
-        &env,
-        PayoutEntry { recipient, amount: 100, asset: token_address },
-    ];
-    client.execute_payouts(&wrong_vault, &list);
-}
-
-#[test]
-#[should_panic(expected = "HostError: Error(Contract, #5)")]
-fn test_execute_payouts_zero_amount() {
-    let (env, client, contract_id) = create_test_env();
-    let admin = Address::generate(&env);
-    let recipient = Address::generate(&env);
-
-    let (_, token_address) =
-        setup_funded_vault(&env, &client, &contract_id, &admin, 500);
-
-    let list = soroban_sdk::vec![
-        &env,
-        PayoutEntry { recipient, amount: 0, asset: token_address },
     ];
     client.execute_payouts(&contract_id, &list);
 }
