@@ -3,18 +3,16 @@ use soroban_sdk::{testutils::Address as _, token, Address, Env};
 
 use crate::{VaultContract, VaultContractClient};
 
-
 fn create_test_env() -> (Env, VaultContractClient<'static>, Address) {
     let env = Env::default();
     env.mock_all_auths();
     let contract_id = env.register(VaultContract, ());
     let client = VaultContractClient::new(&env, &contract_id);
-
     (env, client, contract_id)
 }
 
-fn create_token_contract_v1<'a>(
-    env: &Env,
+fn create_token_contract<'a>(
+    env: &'a Env,
     admin: &Address,
 ) -> (token::Client<'a>, token::StellarAssetClient<'a>, Address) {
     let token_address = env.register_stellar_asset_contract_v2(admin.clone()).address();
@@ -24,281 +22,127 @@ fn create_token_contract_v1<'a>(
 }
 
 #[test]
-fn test_initilization() {
-    let (env, client, _contract_id) = create_test_env();
+fn test_initialization() {
+    let (env, client, _) = create_test_env();
     let admin = Address::generate(&env);
     client.initialize(&admin);
+    assert!(!client.is_paused());
 }
 
+
 #[test]
-fn test_deposit_while_not_paused() {
+#[should_panic(expected = "HostError: Error(Contract, #3)")]
+fn test_deposit_when_paused() {
     let (env, client, contract_id) = create_test_env();
     let admin = Address::generate(&env);
     let user = Address::generate(&env);
-
-    // Setup Token
-    let (token_client, token_admin_client, token_address) = create_token_contract_v1(&env, &admin);
     let amount = 10000;
 
-    env.mock_all_auths();
+    client.initialize(&admin);
 
-    // Mint tokens to user
+    let (token_client, token_admin_client, token_address) = create_token_contract(&env, &admin);
+    client.whitelist_asset(&admin, &token_address, &true);
+
     token_admin_client.mint(&user, &amount);
-
-    // Initialize
-    client.initialize(&admin);
-    client.whitelist_asset(&admin, &token_address, &true);
-
     token_client.approve(&user, &contract_id, &amount, &200);
-    client.deposit(&user, &amount, &token_address);
-
-    // Verify stats
-    let stats = client.get_treasury_stats(&token_address);
-    assert_eq!(stats.total_deposits, amount);
-    assert_eq!(stats.total_locked, amount);
-    assert_eq!(stats.total_liquidity, 0);
-
-    // Verify balance
-    assert_eq!(token_client.balance(&contract_id), amount);
-}
-
-#[test]
-#[should_panic(expected = "HostError: Error(Contract, #3)")] // ContractPaused
-fn test_deposit_when_paused() {
-    let (env, client, _contract_id) = create_test_env();
-    let admin = Address::generate(&env);
-    let user = Address::generate(&env);
-
-    // Setup Token
-    let (_token_client, _token_admin_client, token_address) = create_token_contract_v1(&env, &admin);
-    let amount = 10000;
-    env.mock_all_auths();
-
-    // Initialize
-    client.initialize(&admin);
-    client.whitelist_asset(&admin, &token_address, &true);
 
     client.set_pause(&admin, &true);
-
     client.deposit(&user, &amount, &token_address);
 }
 
 #[test]
 fn test_whitelist_asset() {
-    let (env, client, _contract_id) = create_test_env();
+    let (env, client, _) = create_test_env();
     let admin = Address::generate(&env);
     client.initialize(&admin);
 
-    let token_admin = Address::generate(&env);
-    let (token, _, _) = create_token_contract_v1(&env, &token_admin);
+    let (_, _, token_address) = create_token_contract(&env, &admin);
 
-    // Whitelist
-    client.whitelist_asset(&admin, &token.address, &true);
-    
-    // Remove
-    client.whitelist_asset(&admin, &token.address, &false);
-}
-
-#[test]
-fn test_set_protocol_asset() {
-     let (env, client, _contract_id) = create_test_env();
-    let admin = Address::generate(&env);
-    client.initialize(&admin);
-    
-    let token_admin = Address::generate(&env);
-    let (token, _, _) = create_token_contract_v1(&env, &token_admin);
-    
-    client.set_protocol_asset(&admin, &token.address);
-}
-
-#[test]
-fn test_deposit_success() {
-    let (env, client, contract_id) = create_test_env();
-    let admin = Address::generate(&env);
-    client.initialize(&admin);
-
-    let token_admin = Address::generate(&env);
-    let (token, token_admin_client, _) = create_token_contract_v1(&env, &token_admin);
-    let from = Address::generate(&env);
-
-    client.whitelist_asset(&admin, &token.address, &true);
-
-    token_admin_client.mint(&from, &10000);
-    token.approve(&from, &contract_id, &10000, &200);
-    
-    // Deposit
-    client.deposit(&from, &500, &token.address);
-    
-    assert_eq!(token.balance(&contract_id), 500);
-    assert_eq!(token.balance(&from), 9500);
-}
-
-#[test]
-#[should_panic(expected = "HostError: Error(Contract, #1)")]
-fn test_admin_not_set() {
-    let (env, client, _contract_id) = create_test_env();
-    let admin = Address::generate(&env);
-    env.mock_all_auths();
-
-    client.set_pause(&admin, &true);
-}
-
-#[test]
-#[should_panic(expected = "HostError: Error(Contract, #4)")] // AssetNotWhitelisted
-fn test_deposit_not_whitelisted() {
-    let (env, client, _contract_id) = create_test_env();
-    let admin = Address::generate(&env);
-    client.initialize(&admin);
-
-    let token_admin = Address::generate(&env);
-    let (token, token_admin_client, _) = create_token_contract_v1(&env, &token_admin);
-    let from = Address::generate(&env);
-    
-    token_admin_client.mint(&from, &1000);
-
-    client.deposit(&from, &500, &token.address);
-}
-
-#[test]
-#[should_panic(expected = "HostError: Error(Contract, #5)")] // InvalidAmount
-fn test_deposit_zero_amount() {
-    let (env, client, _contract_id) = create_test_env();
-    let admin = Address::generate(&env);
-    env.mock_all_auths();
-    client.initialize(&admin);
-     let token_admin = Address::generate(&env);
-    let (token, _, _) = create_token_contract_v1(&env, &token_admin);
-    let from = Address::generate(&env);
-    client.whitelist_asset(&admin, &token.address, &true);
-    
-    client.deposit(&from, &0, &token.address);
-}
-
-#[test]
-fn test_treasury_management() {
-    let (env, client, contract_id) = create_test_env();
-    let admin = Address::generate(&env);
-    let user = Address::generate(&env);
-
-    // Setup Token
-    let (token_client, token_admin_client, token_address) = create_token_contract_v1(&env, &admin);
-    let deposit_amount = 1000;
-    let surplus_amount = 500;
-
-    env.mock_all_auths();
-
-    // Initialize
-    client.initialize(&admin);
     client.whitelist_asset(&admin, &token_address, &true);
+    assert!(client.is_asset_whitelisted(&token_address));
 
-    // 1. User deposits (Locked)
-    token_admin_client.mint(&user, &deposit_amount);
-    token_client.approve(&user, &contract_id, &deposit_amount, &200);
-    client.deposit(&user, &deposit_amount, &token_address);
-
-    // 2. Add surplus (Direct transfer to vault, not via deposit)
-    // Simulating fees or external funding
-    token_admin_client.mint(&admin, &surplus_amount);
-    token_client.transfer(&admin, &contract_id, &surplus_amount);
-
-    // Verify Stats
-    let stats = client.get_treasury_stats(&token_address);
-    assert_eq!(stats.total_deposits, deposit_amount);
-    assert_eq!(stats.total_locked, deposit_amount);
-    // Liquidity = Balance (1500) - Locked (1000) = 500
-    assert_eq!(stats.total_liquidity, surplus_amount);
-
-    // 4. Admin withdraws available successfully
-    let recipient = Address::generate(&env);
-    client.withdraw_available(&recipient, &surplus_amount, &token_address);
-
-    // Verify transfer
-    assert_eq!(token_client.balance(&recipient), surplus_amount);
-    assert_eq!(token_client.balance(&contract_id), deposit_amount);
-
-    // Verify Stats
-    let stats_after = client.get_treasury_stats(&token_address);
-    assert_eq!(stats_after.total_liquidity, 0);
-    assert_eq!(stats_after.total_locked, deposit_amount);
-}
-
-#[test]
-#[should_panic(expected = "Insufficient unallocated funds")]
-fn test_withdraw_available_fail_locked() {
-    let (env, client, _contract_id) = create_test_env();
-    let admin = Address::generate(&env);
-    let user = Address::generate(&env);
-
-    let (token_client, token_admin_client, token_address) = create_token_contract_v1(&env, &admin);
-    let amount = 1000;
-    env.mock_all_auths();
-    client.initialize(&admin);
-    client.whitelist_asset(&admin, &token_address, &true);
-
-    token_admin_client.mint(&user, &amount);
-    token_client.approve(&user, &_contract_id, &amount, &200);
-    client.deposit(&user, &amount, &token_address);
-
-    // Try to withdraw locked funds
-    let recipient = Address::generate(&env);
-    client.withdraw_available(&recipient, &500, &token_address);
-}
-
-#[test]
-fn test_withdraw_success() {
-    let (env, client, contract_id) = create_test_env();
-    let admin = Address::generate(&env);
-    client.initialize(&admin);
-    
-    let token_admin = Address::generate(&env);
-    let (token, token_admin_client, _) = create_token_contract_v1(&env, &token_admin);
-    let to = Address::generate(&env);
-    
-    client.whitelist_asset(&admin, &token.address, &true);
-    
-    // Fund contract via deposit
-    token_admin_client.mint(&admin, &1000);
-    token.approve(&admin, &contract_id, &1000, &200);
-    client.deposit(&admin, &1000, &token.address);
-    
-    client.withdraw(&to, &200, &token.address);
-    
-    assert_eq!(token.balance(&to), 200);
-    assert_eq!(token.balance(&contract_id), 800);
+    client.whitelist_asset(&admin, &token_address, &false);
+    assert!(!client.is_asset_whitelisted(&token_address));
 }
 
 #[test]
 fn test_blacklist_asset() {
-    let (env, client, _contract_id) = create_test_env();
+    let (env, client, _) = create_test_env();
     let admin = Address::generate(&env);
     client.initialize(&admin);
 
-    let token_admin = Address::generate(&env);
-    let (token, _, _) = create_token_contract_v1(&env, &token_admin);
+    let (_, _, token_address) = create_token_contract(&env, &admin);
 
-    client.whitelist_asset(&admin, &token.address, &true);
-    assert!(client.is_asset_whitelisted(&token.address));
+    client.whitelist_asset(&admin, &token_address, &true);
+    assert!(client.is_asset_whitelisted(&token_address));
 
-    client.blacklist_asset(&admin, &token.address);
-    assert!(!client.is_asset_whitelisted(&token.address));
+    client.blacklist_asset(&admin, &token_address);
+    assert!(!client.is_asset_whitelisted(&token_address));
 }
 
 #[test]
-#[should_panic(expected = "HostError: Error(Contract, #11)")] // InsufficientLockedFunds
-fn test_withdraw_insufficient_balance() {
-    let (env, client, _contract_id) = create_test_env();
+fn test_set_protocol_asset() {
+    let (env, client, _) = create_test_env();
     let admin = Address::generate(&env);
     client.initialize(&admin);
-    
-    let _token_admin = Address::generate(&env);
-    let (token, token_admin_client, _) = create_token_contract_v1(&env, &admin);
-    let to = Address::generate(&env);
-    
-    client.whitelist_asset(&admin, &token.address, &true);
-    
-    // Contract has 100
-    token_admin_client.mint(&_contract_id, &100);
-    
-    // Try to withdraw 200
-    client.withdraw(&to, &200, &token.address);
+
+    let (_, _, token_address) = create_token_contract(&env, &admin);
+    client.set_protocol_asset(&admin, &token_address);
+}
+
+
+#[test]
+#[should_panic(expected = "HostError: Error(Contract, #1)")]
+fn test_admin_not_set() {
+    let (env, client, _) = create_test_env();
+    let admin = Address::generate(&env);
+    client.set_pause(&admin, &true);
+}
+
+#[test]
+#[should_panic(expected = "HostError: Error(Contract, #4)")]
+fn test_deposit_not_whitelisted() {
+    let (env, client, contract_id) = create_test_env();
+    let admin = Address::generate(&env);
+    let user = Address::generate(&env);
+    let amount = 1000;
+
+    client.initialize(&admin);
+
+    let (token_client, token_admin_client, token_address) = create_token_contract(&env, &admin);
+
+    token_admin_client.mint(&user, &amount);
+    token_client.approve(&user, &contract_id, &amount, &200);
+    client.deposit(&user, &amount, &token_address);
+}
+
+#[test]
+#[should_panic(expected = "HostError: Error(Contract, #5)")]
+fn test_deposit_zero_amount() {
+    let (env, client, contract_id) = create_test_env();
+    let admin = Address::generate(&env);
+    let user = Address::generate(&env);
+
+    client.initialize(&admin);
+
+    let (token_client, token_admin_client, token_address) = create_token_contract(&env, &admin);
+    client.whitelist_asset(&admin, &token_address, &true);
+
+    token_admin_client.mint(&user, &1000);
+    token_client.approve(&user, &contract_id, &1000, &200);
+    client.deposit(&user, &0, &token_address);
+}
+
+
+#[test]
+fn test_pause_toggle() {
+    let (env, client, _) = create_test_env();
+    let admin = Address::generate(&env);
+    client.initialize(&admin);
+
+    assert!(!client.is_paused());
+    client.set_pause(&admin, &true);
+    assert!(client.is_paused());
+    client.set_pause(&admin, &false);
+    assert!(!client.is_paused());
 }

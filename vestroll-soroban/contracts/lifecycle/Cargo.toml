@@ -1,11 +1,10 @@
 [package]
-name = "vestroll-lifecycle"
+name = "vestroll_lifecycle"
 version = "0.1.0"
 edition = "2021"
 
-[lib]
-crate-type = ["cdylib"]
-
 [dependencies]
 soroban-sdk = { workspace = true }
-vestroll-common = { path = "../common" }
+vestroll_common = { version = "0.1.0", path = "../common" }
+vestroll_profile = { version = "0.1.0", path = "../profile" }
+vestroll_vault = { version = "0.1.0", path = "../vault" }

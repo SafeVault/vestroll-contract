@@ -1,6 +1,6 @@
 {
   "generators": {
-    "address": 5,
+    "address": 4,
     "nonce": 0
   },
   "auth": [
@@ -244,6 +244,18 @@
                         },
                         "val": {
                           "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "Paused"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "bool": false
                         }
                       }
                     ]
