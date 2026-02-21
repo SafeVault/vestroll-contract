@@ -48,18 +48,24 @@ fn setup_contracts(
     
     let vault_id = env.register(VaultContract, ());
     let vault_client = VaultContractClient::new(env, &vault_id);
-    vault_client.initialize(admin);
+   
+    let admin = Address::generate(&env);     
+    let token_admin = Address::generate(&env); 
+
+    let token_address = env.register_stellar_asset_contract_v2(token_admin.clone()).address();
+
+    vault_client.initialize(&admin, &token_address);
     
     let token_address = env.register_stellar_asset_contract_v2(admin.clone()).address();
     let token_client = token::Client::new(env, &token_address);
     let token_admin = token::StellarAssetClient::new(env, &token_address);
     
-    vault_client.whitelist_asset(admin, &token_address, &true);
+    vault_client.whitelist_asset(&admin, &token_address, &true);
     token_admin.mint(employer, &1_000_000);
     
     let lifecycle_id = env.register(LifecycleContract, ());
     let lifecycle_client = LifecycleContractClient::new(env, &lifecycle_id);
-    lifecycle_client.initialize(admin, &vault_id, &profile_id, &token_address);
+    lifecycle_client.initialize(&admin, &vault_id, &profile_id, &token_address);
     
     (lifecycle_client, vault_id, profile_id, token_address, token_client)
 }

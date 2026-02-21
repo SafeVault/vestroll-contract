@@ -57,8 +57,10 @@ pub enum DataKey {
     TotalDeposits(Address),
     TotalLocked(Address),
     TotalFees(Address),
+    Token,
 }
 
+// Error
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
