@@ -1,6 +1,6 @@
 [package]
-name = "vestroll-identity"
-version = "0.0.0"
+name = "vestroll_identity"
+version = "0.1.0"
 edition = "2021"
 publish = false
 
