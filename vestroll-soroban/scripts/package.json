@@ -1,0 +1,20 @@
+{
+    "name": "vestroll-scripts",
+    "version": "1.0.0",
+    "description": "",
+    "main": "index.js",
+    "scripts": {
+        "test": "echo \"Error: no test specified\" && exit 1",
+        "cron-trigger": "ts-node cron_trigger.ts"
+    },
+    "keywords": [],
+    "author": "",
+    "license": "ISC",
+    "dependencies": {
+        "@stellar/stellar-sdk": "^14.5.0",
+        "node-fetch": "^3.3.2",
+        "stellar-sdk": "^13.3.0",
+        "ts-node": "^10.9.1",
+        "typescript": "^5.0.0"
+    }
+}

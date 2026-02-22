@@ -1,5 +1,5 @@
 #![no_std]
-use soroban_sdk::{Address, Symbol, contracterror, contracttype, symbol_short};
+use soroban_sdk::{contracterror, contracttype, symbol_short, Address, Symbol};
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -108,5 +108,12 @@ pub enum LifecycleError {
 // Events
 pub const PAUSED: Symbol = symbol_short!("paused");
 pub const UNPAUSED: Symbol = symbol_short!("unpaused");
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Payment {
+    pub recipient: Address,
+    pub amount: i128,
+}
 pub const PAYOUT: Symbol = symbol_short!("payout");
 pub const BATCH_DONE: Symbol = symbol_short!("batch");

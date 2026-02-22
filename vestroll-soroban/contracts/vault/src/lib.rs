@@ -3,7 +3,7 @@ mod test_vault;
 
 use soroban_sdk::{contract, contractimpl, token, Address, Env, Vec};
 use vestroll_common::{
-    DataKey, PayoutEntry, TreasuryStats, VaultError, BATCH_DONE, PAUSED, PAYOUT, UNPAUSED,
+    DataKey, Payment, PayoutEntry, TreasuryStats, VaultError, BATCH_DONE, PAUSED, PAYOUT, UNPAUSED,
 };
 
 #[contract]
@@ -191,6 +191,16 @@ impl VaultContract {
         Self::internal_transfer(&env, &asset, &to, amount)
     }
 
+    pub fn set_protocol_asset(env: Env, admin: Address, asset: Address) -> Result<(), VaultError> {
+        Self::check_admin(&env, &admin)?;
+        env.storage()
+            .instance()
+            .set(&DataKey::ProtocolAsset, &asset);
+        // Auto-whitelist protocol asset
+        Self::internal_whitelist_asset(&env, asset, true);
+        Ok(())
+    }
+  
     // ====================================================================
     // Asset & Admin Management
     // ====================================================================
@@ -212,7 +222,12 @@ impl VaultContract {
         Ok(true)
     }
 
-    pub fn whitelist_asset(env: Env, admin: Address, asset: Address, allowed: bool) -> Result<(), VaultError> {
+    pub fn whitelist_asset(
+        env: Env,
+        admin: Address,
+        asset: Address,
+        allowed: bool,
+    ) -> Result<(), VaultError> {
         Self::check_admin(&env, &admin)?;
         Self::internal_whitelist_asset(&env, asset, allowed);
         Ok(())
@@ -266,9 +281,13 @@ impl VaultContract {
 
     fn internal_whitelist_asset(env: &Env, asset: Address, allowed: bool) {
         if allowed {
-            env.storage().persistent().set(&DataKey::AssetWhitelist(asset), &true);
+            env.storage()
+                .persistent()
+                .set(&DataKey::AssetWhitelist(asset), &true);
         } else {
-            env.storage().persistent().remove(&DataKey::AssetWhitelist(asset));
+            env.storage()
+                .persistent()
+                .remove(&DataKey::AssetWhitelist(asset));
         }
     }
 
