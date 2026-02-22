@@ -192,3 +192,34 @@ fn test_admin_not_set() {
     // Calling set_pause before initialize triggers VaultError::AdminNotSet
     client.set_pause(&admin, &true);
 }
+
+// ── Invoice Tests ────────────────────────────────────────────────────────────
+
+#[test]
+fn test_pay_invoice_success() {
+    let (env, client, contract_id) = create_test_env();
+    let admin = Address::generate(&env);
+    let recipient = Address::generate(&env);
+
+    let (token, token_address) = setup_funded_vault(&env, &client, &contract_id, &admin, 5000);
+
+    let invoice_id = soroban_sdk::String::from_str(&env, "INV-2026");
+    client.pay_invoice(&admin, &recipient, &1000, &token_address, &invoice_id);
+
+    assert_eq!(token.balance(&recipient), 1000);
+    assert_eq!(client.get_treasury_stats(&token_address).total_liquidity, 4000);
+}
+
+#[test]
+#[should_panic(expected = "HostError: Error(Contract, #10)")] // VaultError::InsufficientBalance
+fn test_pay_invoice_insufficient_funds() {
+    let (env, client, contract_id) = create_test_env();
+    let admin = Address::generate(&env);
+    let recipient = Address::generate(&env);
+
+    let (_, token_address) = setup_funded_vault(&env, &client, &contract_id, &admin, 500);
+
+    let invoice_id = soroban_sdk::String::from_str(&env, "INV-2026");
+    // Attempt to pay more than available
+    client.pay_invoice(&admin, &recipient, &1000, &token_address, &invoice_id);
+}
