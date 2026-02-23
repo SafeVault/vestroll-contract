@@ -3,7 +3,7 @@ mod test_vault;
 
 use soroban_sdk::{contract, contractimpl, token, Address, Env, Vec};
 use vestroll_common::{
-    DataKey, Payment, PayoutEntry, TreasuryStats, VaultError, BATCH_DONE, PAUSED, PAYOUT, UNPAUSED,
+    DataKey, Payment, PayoutEntry, TreasuryStats, VaultError, BATCH_DONE, PAUSED, PAYOUT, UNPAUSED, INVOICE,
 };
 
 #[contract]
@@ -120,6 +120,46 @@ impl VaultContract {
 
         env.events().publish((BATCH_DONE, admin), processed);
         Ok(processed)
+    }
+
+    // ====================================================================
+    // Invoice Payments
+    // ====================================================================
+
+    pub fn pay_invoice(
+        env: Env,
+        admin: Address,
+        recipient: Address,
+        amount: i128,
+        asset: Address,
+        invoice_id: soroban_sdk::String,
+    ) -> Result<(), VaultError> {
+        Self::check_admin(&env, &admin)?;
+
+        if Self::is_paused(&env) {
+            return Err(VaultError::ContractPaused);
+        };
+
+        if amount <= 0 {
+            return Err(VaultError::InvalidAmount);
+        }
+
+        let client = token::Client::new(&env, &asset);
+        let balance = client.balance(&env.current_contract_address());
+        let locked: i128 = env.storage().persistent().get(&DataKey::TotalLocked(asset.clone())).unwrap_or(0);
+
+        let available = balance - locked;
+
+        if amount > available {
+            return Err(VaultError::InsufficientBalance);
+        }
+
+        Self::internal_transfer(&env, &asset, &recipient, amount)?;
+
+        // Publish event for indexer to listen
+        env.events().publish((INVOICE, invoice_id), (asset.clone(), amount));
+
+        Ok(())
     }
 
     // ====================================================================

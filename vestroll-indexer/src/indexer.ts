@@ -25,8 +25,8 @@ async function startIndexer() {
                     console.log(`Mapping Stellar hash ${tx.hash} to internal ID ${transactionId}`);
 
                     try {
-                        await updateTransactionStatus(transactionId, tx.hash, 'Confirmed');
-                        console.log(`Transaction ${transactionId} updated to Confirmed.`);
+                        await updateTransactionStatus(transactionId, tx.hash, 'Paid');
+                        console.log(`Transaction ${transactionId} updated to Paid.`);
                     } catch (error) {
                         console.error(`Failed to update transaction ${transactionId}:`, error);
                     }

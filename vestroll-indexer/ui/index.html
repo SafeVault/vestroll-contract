@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VestRoll - Invoice Payment</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="app-container">
+        <header>
+            <div class="logo">VestRoll</div>
+            <nav>
+                <a href="#">Dashboard</a>
+                <a href="#" class="active">Invoices</a>
+                <a href="#">Vault</a>
+            </nav>
+            <div class="profile">Admin</div>
+        </header>
+
+        <main>
+            <div class="invoice-card">
+                <div class="invoice-header">
+                    <div>
+                        <h2>Invoice <span>#INV-2026</span></h2>
+                        <p class="date">Issued on Feb 22, 2026</p>
+                    </div>
+                    <div class="status-badge" id="statusBadge">Pending</div>
+                </div>
+
+                <div class="invoice-details">
+                    <div class="detail-group">
+                        <label>Billed To</label>
+                        <p>Organization Vault</p>
+                    </div>
+                    <div class="detail-group">
+                        <label>Contractor Address</label>
+                        <p class="address">GAXD...QW3F</p>
+                    </div>
+                </div>
+
+                <table class="items-table">
+                    <thead>
+                        <tr>
+                            <th>Description</th>
+                            <th>Amount</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Frontend Development Services (Jan 2026)</td>
+                            <td>$1,500.00 USDC</td>
+                        </tr>
+                    </tbody>
+                    <tfoot>
+                        <tr>
+                            <td><strong>Total Amount Due</strong></td>
+                            <td class="total-amount"><strong>$1,500.00 USDC</strong></td>
+                        </tr>
+                    </tfoot>
+                </table>
+
+                <div class="action-footer">
+                    <p class="warning">This will trigger a one-off USDC transfer from the Vault.</p>
+                    <button id="payInvoiceBtn" class="primary-btn">Pay Invoice</button>
+                    <!-- Simulated transaction details block -->
+                    <div id="txDetails" class="tx-details hidden">
+                        <p><strong>Transaction Hash:</strong> <span id="txHash"></span></p>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Integrate Stellar SDK or Soroban Client Script (Mocked for Demo) -->
+    <script src="app.js"></script>
+</body>
+</html>

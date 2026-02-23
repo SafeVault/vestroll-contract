@@ -117,3 +117,4 @@ pub struct Payment {
 }
 pub const PAYOUT: Symbol = symbol_short!("payout");
 pub const BATCH_DONE: Symbol = symbol_short!("batch");
+pub const INVOICE: Symbol = symbol_short!("invoice");
